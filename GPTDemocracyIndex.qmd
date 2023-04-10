@@ -1,0 +1,147 @@
+---
+title: "Using Large Language Models to generate democracy scores"
+author: "Xavier Marquez"
+format: html
+editor: visual
+toc: true
+---
+
+Like many people, I've been playing recently with ChatGPT and other Large Language Models, and I've found them very useful for many tasks, though with varying results. Inspired in part by a [blog post](https://tedunderwood.com/2023/03/19/using-gpt-4-to-measure-the-passage-of-time-in-fiction/) by Ted Underwood on using GPT4 to measure the passage of time in fiction, I decided to use [OpenAI's ChatGPT](https://chat.openai.com/chat) (version 3.5-turbo) and [Anthropic's Claude](https://www.anthropic.com/index/introducing-claude) (to which I recently got access) to see if I could replicate a democracy index.
+
+This turned out to be surprisingly simple and cheap. I was able to produce thousands of country-year observations in a few hours, complete with justifications, at a very low cost (about \$1.59 of usage for the OpenAI API for 1600 country-years; Claude is currently free for research uses). Though not perfect, the index is a plausible measure of democracy, and can be usefully evaluated because the models provide justifications for their judgments. Moreover, the procedure described here can be extended to many other forms of data generation for political science.
+
+The two models I used (ChatGPT and Claude) produced different judgments for some cases (as human coders would), and sometimes their justifications weren't accurate, but overall I was impressed with the quality of their work. ChatGPT seemed to produce more accurate judgments (as measured by its correlation with the Varieties of Democracy Index and Freedom House), and the OpenAI API is more feature-rich, but Claude is currenlty free for research purposes, so it was relatively easy to use it to experiment and produce many more country-year observations (about 10,000, though that took about 12 hours given rate limits). I only experimented with GPT4 for a few country-year observations because I'm cheap (and GPT3.5-turbo is good enough here), but even taking into account GPT4's higher cost, it would not be difficult to produce many observations with a very reasonable expense.
+
+I provide fully replicable code \[in this repository\]() using the \`[targets](https://books.ropensci.org/targets/)\` package, but follow along for an explanation and an evaluation of the results. If you want to skip the technical details of R code, just scroll down to the section on evaluation.
+
+## Setup
+
+You will need a few packages.
+
+```{r setup}
+library(tidyverse)
+library(democracyData) # Use remotes::install_github("xmarquez/democracyData")
+library(openai)
+```
+
+To use the
+
+## Sample
+
+The first thing to do is to set up the sample of countries that we want to score. Here I use a sample from Freedom House, because it is fairly comprehensive, and Freedom House scores are widely used as proxies for democracy, and I want to check how the generated scores compare to Freedom House. But we could use any country-year panel data.
+
+```{r}
+library(tidyverse)
+library(democracyData) # Use remotes::install_github("xmarquez/democracyData")
+
+fh_data <- democracyData::download_fh()
+fh_panel <- fh_data |> 
+  select(fh_country, year) |>
+  filter(year %% 5 == 0)
+```
+
+Note that since ChatGPT has a knowledge cutoff of 2021, it does not make sense to ask it to generate democracy scores for after that date. To keep costs low and be able to do some experimentation, I'm also only calculating the scores for 20% of all country years - here, simply the years that end in 0 and 5. (A full run of all `r nrow(fh_data)` country-years only costs about \$8, but I did some trial-and error testing and some experimentations, and with a single API key coding `r nrow(fh_panel)` country-years will in any case take about 6 hours to complete).
+
+We also create a prompt. The [OpenAI API documentation for the Chat GPT models](https://platform.openai.com/docs/guides/chat/introduction) indicates that a prompt should have at leas one "system" message and one "user" message. The system message gives the system an identity to emulate; the user message contains your instructions. (Though OpenAI also notes that GPT3.5 does not always pay particular attention to the system message). For the system message, I want to ChatGPT to emulate a political scientist as much as possible; my system message is:
+
+> "You are a political scientist with deep area knowledge of \[country X\]"
+
+For the user message, I want to anchor ChatGPT's answer to a particular conception of democracy; I use here V-Dem's prompt for the question of [whether a country is an electoral democracy](https://www.v-dem.net/documents/24/codebook_v13.pdf#page=45):
+
+> The electoral principle of democracy seeks to embody the core value of making rulers responsive to citizens, achieved through electoral competition for the electorate's approval under circumstances when suffrage is extensive; political and civil society organizations can operate freely; elections are clean and not marred by fraud or systematic irregularities; and elections affect the composition of the chief executive of the country. In between elections, there is freedom of expression and an independent media capable of presenting alternativeviews on matters of political relevance. (V-Dem Codebook v. 13, p. 45)
+
+Note we could use a very different conception of democracy! In any case, the full user message gives ChatGPT instructions for how to use this conception to answer the question of how democractic a country is:
+
+> "You are investigating the extent to which the ideal of electoral democracy in \[country X\] was achieved in \[year Y\]
+>
+> The electoral principle of democracy seeks to embody the core value of making rulers responsive to citizens, achieved through electoral competition for the electorate's approval under circumstances when suffrage is extensive; political and civil society organizations can operate freely; elections are clean and not marred by fraud or systematic irregularities; and elections affect the composition of the chief executive of the country. In between elections, there is freedom of expression and an independent media capable of presenting alternative views on matters of political relevance.
+>
+> To what extent was the ideal of electoral democracy in its fullest sense achieved in \[country X\] in \[year Y\]?
+>
+> Use only knowledge relevant to \[country X\] in \[year Y\] and answer in a scale of 0 to 10, with 0 representing "not at all" and 10 representing "completely", and add a measure of your confidence from 0 to 1, with 0 representing "not confident at all", and 1 representing "very confident". Use this template to answer:
+>
+> \[country X\] in \[year Y\]: number from 0-10, confidence: number from 0-1
+
+We can generate all the prompts very quickly in a format appropriate for use with the {openai} package with this function call:
+
+```{r}
+create_prompt <- function(fh_data) {
+  prompts <- purrr::map2(fh_data$fh_country, fh_data$year,
+                         ~list(
+                           list(
+                             "role" = "system",
+                             "content" = stringr::str_c(
+                               "You are a political scientist with deep area",
+                               " knowledge of ", .x, ". ")
+                           ),
+                           list(
+                             "role" = "user",
+                             "content" = stringr::str_c(
+                               "You are investigating the extent to which the ",
+                               "ideal of electoral democracy in ", .x, 
+                               " was achieved in ", .y, ". \n\nThe electoral ",
+                               "principle of democracy seeks to embody the ",
+                               "core value of making rulers responsive to ",
+                               "citizens, achieved through electoral competition",
+                               " for the electorate’s approval under ",
+                               "circumstances when suffrage is extensive; ",
+                               "political and civil society organizations can",
+                               " operate freely; elections are clean and not ",
+                               "marred by fraud or systematic irregularities; ",
+                               "and elections affect the composition of the ",
+                               "chief executive of the country. In between ",
+                               "elections, there is freedom of expression and ",
+                               "an independent media capable of presenting ",
+                               " alternative views on matters of political ",
+                               " relevance. \n\nTo what extent was the ideal ",
+                               "of electoral democracy in its fullest sense ",
+                               "achieved in ", .x, " in ", .y, "? \n\nUse only",
+                               " knowledge relevant to ", .x, " in ", .y, 
+                               " and answer in a scale of 0 to 10, with 0 ",
+                               "representing \"not at all\" and 10 representing",
+                               " \"completely\", and add a measure of your ",
+                               " confidence from 0 to 1, with 0 representing  ",
+                               "\"not confident at all\", and 1 representing ",
+                               "\"very confident\". Use this template to answer:",
+                               " \n", .x," in ", .y, ": number from 0-10, ",
+                               "confidence: number from 0-1")
+                             )
+                           )
+                         )
+}
+
+prompts <- create_prompt(fh_panel)
+head(prompts, 3)
+```
+
+We then send these prompts to the API and wait for results, using this function:
+
+```{r, eval = FALSE}
+submit_openai <- function(prompt, temperature = 0.2, n = 1) {
+  res <- openai::create_chat_completion(model = "gpt-3.5-turbo",
+                                        messages = prompt,
+                                        temperature = temperature,
+                                        n = n)
+  Sys.sleep(7)
+  res
+}
+
+openai_completions <- prompts |>
+  purrr::map(submit_openai)
+```
+
+Note you need an OpenAI key, and to save it in a place where the function can find it, typically in your `.Renviron` file. You can do that as follows:
+
+```         
+Sys.setenv(
+    OPENAI_API_KEY = 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+)
+```
+
+My actual code wraps all of this in a {targets} pipeline (see \[here\]() for details) so that if I got disconnected or whatever I would not have to pay again to get already-submitted prompts recalculated. Note also that there are several parameters you can set when generating chat completions (see [here](https://platform.openai.com/docs/api-reference/chat/create) for a full description), including the number of distinct responses generated per prompt (n), and the temperature parameter. Lower temperatures make the outputs "more deterministic" (though I don't think the outputs are ever fully deterministic)
+
+## Why generate more democracy scores?
+
+## More interesting uses
+
+The V-Dem project already exists and publishes annually updated estimates of democracy scores, complete with component indicators and all index subcomponents. While using ChatGPT to replicate these does not

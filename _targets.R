@@ -29,7 +29,7 @@ list(
   tar_target(
     name = fh_data,
     command = democracyData::download_fh() |>
-      filter(year < 2020)
+      filter(year < 2022)
 #   format = "feather" # efficient storage of large data frames # nolint
   ),
   tar_target(
@@ -43,9 +43,22 @@ list(
     iteration = "list"
   ),
   tar_target(
+    name = pacl_prompts,
+    command = create_prompt_pacl(sample_fh),
+    iteration = "list"),
+  tar_target(
     name  = openai_completions,
     command = submit_openai(prompts),
     pattern = map(prompts)
+  ),
+  tar_target(
+    name  = openai_completions_pacl,
+    command = submit_openai(pacl_prompts),
+    pattern = map(pacl_prompts)
+  ),
+  tar_target(
+    name  = completions_tibble_pacl,
+    command = format_results_pacl(openai_completions_pacl)
   ),
   tar_target(
     name = completions_tibble,
@@ -80,13 +93,61 @@ list(
     command = format_results_claude(claude_completions2)
   ),
   tar_target(
-    name = correlations,
-    command = completions_tibble |> 
-      left_join(claude_tibble) |>
-      left_join(fh_data) |> 
-      left_join(democracyData::vdem_simple) |> 
-      select(score, claude_score, fh_total_reversed, v2x_polyarchy) |> 
+    name = correlations_all,
+    command = all_dem |> 
+      pivot_wider(id_cols = c(extended_country_name:year), 
+                  values_from = value_rescaled, 
+                  names_from = measure,
+                  names_sort = TRUE) |> 
+      select(-extended_country_name:-year) |> 
       corrr::correlate()
+  ),
+  tar_target(
+    name = correlations_ordinal,
+    command = all_dem |> 
+      filter(index_type == "ordinal") |>
+      pivot_wider(id_cols = extended_country_name:year, 
+                  values_from = value_rescaled, 
+                  names_from = measure,
+                  names_sort = TRUE) |> 
+      select(-extended_country_name:-year) |> 
+      corrr::correlate()
+  ),
+  tar_target(
+    name = all_dem,
+    command = generate_democracy_scores_dataset(verbose = FALSE) |>
+      filter(extended_country_name %in% combined_ai_scores$extended_country_name, 
+             year %in% combined_ai_scores$year) |>
+      bind_rows(combined_ai_scores) |>
+      group_by(measure) |>
+      mutate(value_rescaled = scales::rescale(value, to = c(0,1))) %>%
+      group_by(measure, extended_country_name) |>
+      mutate(coverage = n()) |>
+      ungroup() 
+  ),
+  tar_target(
+    name = combined_ai_scores,
+    command = completions_tibble |>
+      mutate(dataset = "openai",
+             index_type = "ordinal",
+             measure = "openai_score") |>
+      rename(value = score) |>
+      bind_rows(claude_tibble |>
+                  mutate(dataset = "anthropic small sample",
+                         index_type = "ordinal",
+                         measure = "claude_score") |>
+                  rename(value = score)) |>
+      bind_rows(claude_tibble2 |>
+                  mutate(dataset = "anthropic larger sample",
+                         index_type = "ordinal",
+                         measure = "claude_score_2") |>
+                  rename(value = score)) |>
+      country_year_coder(fh_country, year, 
+                         include_in_output = c(
+                           "extended_country_name", "GWn", "cown", "in_GW_system"
+                           ),
+                         verbose = FALSE) |>
+      select(extended_country_name, GWn, cown, in_GW_system, 
+             year, measure, value, confidence, index_type, dataset)
   )
-
 )

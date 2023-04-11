@@ -1,8 +1,9 @@
 ---
-title: "Using Large Language Models to generate democracy scores"
-author: "[Xavier Márquez](https://people.wgtn.ac.nz/xavier.marquez)"
-affiliations: 
-  - name: "Victoria University of Wellington"
+title: "Using Large Language Models to generate democracy scores: An experiment"
+author:
+  - name: "[Xavier Márquez](https://people.wgtn.ac.nz/xavier.marquez)"
+    affiliations:
+    - name: "Victoria University of Wellington"
 format: html
 editor: visual
 toc: true
@@ -12,15 +13,15 @@ warning: false
 
 Like many people, I've been playing recently with ChatGPT and other large language models, and I've found them very useful for many tasks. Inspired in part by a [blog post](https://tedunderwood.com/2023/03/19/using-gpt-4-to-measure-the-passage-of-time-in-fiction/) by Ted Underwood on using GPT4 to measure the passage of time in fiction, I decided to use [OpenAI's ChatGPT](https://chat.openai.com/chat) (version 3.5-turbo) and [Anthropic's Claude](https://www.anthropic.com/index/introducing-claude) (to which I recently got access) to see if I could replicate a democracy index.
 
-This turned out to be surprisingly simple and cheap. I was able to produce thousands of country-year observations in a few hours, complete with justifications, at a very low cost (about \$1.59 of usage for the OpenAI API for 1600 country-years; Claude is currently free for research uses). Though by no means perfect (and in some cases completely wrong), the index is a plausible measure of democracy, and can be usefully evaluated partly because the models provide justifications for their judgments. Moreover, the procedure described here can be extended to many other forms of data generation for political science.
+This turned out to be surprisingly simple and cheap. I was able to produce thousands of country-year observations in a few hours, complete with justifications, at a very low cost (about \$1.59 of usage for the OpenAI API for 1600 country-years; Claude is currently free for research uses). Though by no means perfect (and in some cases completely wrong), the scores they produce are a plausible measure of democracy, and can be usefully evaluated partly because the models provide justifications for their judgments. Moreover, the procedure described here can be extended to many other forms of data generation for political science.
 
-The two models I used (ChatGPT and Claude) produced different judgments for some cases (as human coders would), and sometimes their justifications weren't accurate, but overall I was impressed with the quality of their work. ChatGPT seemed to produce more accurate judgments (as measured by its correlation with the Varieties of Democracy Index and Freedom House data and its lower root mean square error), and the OpenAI API is more feature-rich, but Claude is currently free for research purposes, so it was relatively easy to use it to experiment and produce many more country-year observations (about 10,000, though that took about 12 hours given my current rate limits). I don't have access to GPT4, so I can't tell whether it would be better for this task, but my sense is that even GPT3.5 is very good already for this sort of task.
+The two models I used (ChatGPT aka GPT3.5 Turbo and Claude) produced different judgments for some cases (as human coders would), and sometimes their justifications weren't accurate, but overall I was impressed with the quality of their work. ChatGPT seemed to produce more accurate judgments (as measured by its correlation with the Varieties of Democracy Index and Freedom House data and its lower root mean square error), and the OpenAI API is more feature-rich, but Claude is currently free for research purposes, so it was relatively easy to use it to experiment and produce many more country-year observations (about 10,000, though that took about 12 hours given my current rate limits). I don't have access to GPT4, so I can't tell whether it would be better for this task, but my sense is that even GPT3.5 is very good already for this sort of task.
 
-I provide replicable code [in this repository](https:/github.com/xmarquez/GPTDemocracyIndex) using the \`[targets](https://books.ropensci.org/targets/)\` package (though the repo is not stable - I'm still experimenting with it, and things are liable to change!), but follow along for an explanation and an evaluation of the results. If you want to skip the technical details of R code, just scroll down to the section on evaluation.
+I provide replicable code [in this repository](https:/github.com/xmarquez/GPTDemocracyIndex) using the [`targets`](https://books.ropensci.org/targets/) package (though the repo is not stable - I'm still experimenting with it, and things are liable to change!), but follow along for an explanation and an evaluation of the results. If you want to skip the technical details of R code, just scroll down to the section on evaluation.
 
 ## Setup
 
-You will need a few packages and an API key from OpenAI (and an API key for Claude as well if you wanted to use that model instead).
+You will need a few packages and an API key from OpenAI (and an API key for Claude as well if you wanted to use that model, but I don't provide instructions here - check [the repo](https:/github.com/xmarquez/GPTDemocracyIndex) for details).
 
 ```{r setup}
 library(tidyverse)
@@ -36,7 +37,7 @@ tar_load(fh_data)
 theme_set(theme_bw())
 ```
 
-Follow the instructions in the [openai](https://irudnyts.github.io/openai/) package to save your OpenAI api key in the appropriate environment variable.
+Follow the instructions in the [openai](https://irudnyts.github.io/openai/) package to save your OpenAI API key in the appropriate environment variable.
 
 ## Sample and Methods
 
@@ -55,7 +56,7 @@ fh_panel <- fh_data |>
   filter(year %% 5 == 0, year < 2021)
 ```
 
-Note that since ChatGPT has a knowledge cutoff of 2021, it does not make sense to ask it to generate democracy scores for after that date. To keep costs low and be able to do some experimentation, I'm also only calculating the scores for 20% of all country years - here, simply the years that end in 0 and 5. (A full run of all `r nrow(fh_data)` country-years only costs about \$8, but I did some trial-and error testing and some experimentation, and with a single API key coding `r nrow(fh_panel)` country-years will in any case take about 6 hours to complete for the GPT3.5 API).
+Note that since ChatGPT has a knowledge cutoff of 2021, it does not make sense to ask it to generate democracy scores for after that date. To keep costs low and be able to do some experimentation, I'm also only calculating the scores for about 20% of all country years - here, simply the years that end in 0 and 5. (A full run of all `r nrow(fh_data)` country-years only costs about \$8, but I did some trial-and error testing and some experimentation, and with a single API key coding `r nrow(fh_panel)` country-years in any case takes about 6 hours to complete for the GPT 3.5 API, and I'm impatient).
 
 We also need to craft a good a prompt. The [OpenAI API documentation for the Chat GPT models](https://platform.openai.com/docs/guides/chat/introduction) indicates that a prompt should have at leas one "system" message and one "user" message. The system message gives the system an identity to emulate (though OpenAI also notes that GPT3.5 does not always pay particular attention to the system message); the user message contains your instructions.
 
@@ -67,7 +68,7 @@ For the user message, I want to anchor ChatGPT's answer to a particular concepti
 
 > The electoral principle of democracy seeks to embody the core value of making rulers responsive to citizens, achieved through electoral competition for the electorate's approval under circumstances when suffrage is extensive; political and civil society organizations can operate freely; elections are clean and not marred by fraud or systematic irregularities; and elections affect the composition of the chief executive of the country. In between elections, there is freedom of expression and an independent media capable of presenting alternativeviews on matters of political relevance. (V-Dem Codebook v. 13, p. 45)
 
-Note we could use a very different conception of democracy! (In fact, below I show some results using a different prompt based off the PACL dataset, which tends to produce somewhat better results). In any case, the full user message gives ChatGPT instructions for how to use this conception to answer the question of how democractic a country is:
+Note we could use a very different conception of democracy! (In fact, I'm still working on some scores using a different prompt based off the [Democracy/Dictatorship](https://xmarquez.github.io/democracyData/reference/pacl.html) dataset, which seems so far to produce somewhat better results). In any case, the full user message gives ChatGPT instructions for how to use this conception to answer the question of how democractic a country is:
 
 > "You are investigating the extent to which the ideal of electoral democracy in \[country X\] was achieved in \[year Y\]
 >
@@ -148,11 +149,11 @@ openai_completions <- prompts |>
   purrr::map(submit_openai) 
 ```
 
-Note that there are several parameters you can set when generating chat completions (see [here](https://platform.openai.com/docs/api-reference/chat/create) for a full description), including the number of distinct responses generated per prompt (n), and the temperature parameter. Lower temperatures make the outputs "more deterministic" (though I don't think the outputs are ever fully deterministic), and are recommended for analytical tasks; I set it at 0.2, somewhat arbitrarily.
+Note that there are several parameters you can set when generating chat completions (see [here](https://platform.openai.com/docs/api-reference/chat/create) for a full description), including the number of distinct responses generated per prompt (n), and the temperature parameter. Lower temperatures make the outputs "more deterministic" (though I don't think the outputs are ever fully deterministic), and are recommended for analytic tasks; I set it at 0.2, somewhat arbitrarily.
 
 I used the same prompt for Claude (the Anthropic model), but ran it twice - once with a smaller sample, and once with the full `r fh_data |> filter(year < 2021) |> nrow()` country-year observations in the Freedom House panel up to 2020.
 
-My actual code wraps all of this in a \`[targets](https://books.ropensci.org/targets/)\` pipeline (see [here](https://github.com/xmarquez/GPTDemocracyIndex) for details) so that if I got disconnected or whatever I would not have to pay again to get already-submitted prompts recalculated. After OpenAI and Claude are done, I did some data wrangling to get their responses in the right tabular form (not shown here; check out the [repo](https://github.com/xmarquez/GPTDemocracyIndex) for all the gory details), and voilá! Your democracy index is ready.
+My actual code wraps all of this in a [`targets`](https://books.ropensci.org/targets/) pipeline (see [here](https://github.com/xmarquez/GPTDemocracyIndex) for details) so that if I got disconnected or whatever I would not have to pay again to get already-submitted prompts recalculated. After OpenAI and Claude are done, I did some data wrangling to get their responses in the right tabular form (not shown here; check out the [repo](https://github.com/xmarquez/GPTDemocracyIndex) for all the gory details), and voilá! Your democracy index is ready.
 
 Here's a random sample of the generated OpenAI scores:
 
@@ -191,7 +192,7 @@ claude_tibble2 |>
 
 The short answer is that it depends on what you mean by "good", and what you are looking for in democracy scores. I wouldn't (yet) use them in research.
 
-But they are about as highly correlated to major democracy scores as other scores are among themselves (if on the lower side). For example, in figure @fig-correlations, we see that all the AI generated democracy scores are correlated at an above-median level with the V-Dem polyarchy index, suggesting that the actual prompt (which uses the definition of electoral democracy used for the polyarchy index) mattered. They are also well correlated with the Economist Intelligence Unit's Index, but somewhat less well correlated with Freedom House (though still better than the median correlation).
+But they are about as highly correlated to major democracy scores as other scores are among themselves (if on the lower side). For example, in figure @fig-correlations, we see that all the AI generated democracy scores are correlated at an above-median level with the V-Dem Polyarchy index, suggesting that the actual prompt (which uses the definition of electoral democracy used for the Polyarchy index) mattered. They are also well correlated with the Economist Intelligence Unit's Index, but somewhat less well correlated with Freedom House (though still better than the median correlation).
 
 ```{r}
 #| echo: false
@@ -267,7 +268,7 @@ correlations |>
                            " Higher than median correlations in blue."))
 ```
 
-A simple hierarchical cluster analysis (@fig-cluster) confirms that the AI-generated scores (especially GPT3.5's scores) are closest in their judgments to the Varieties of Democracy "additive polyarchy index" (a variant of the Polyarchy index).
+A simple hierarchical cluster analysis (@fig-cluster) confirms that the AI-generated scores (especially GPT 3.5's scores) are closest in their judgments to the Varieties of Democracy "additive Polyarchy index" (a variant of the Polyarchy index).
 
 ```{r}
 #| label: fig-cluster
@@ -294,7 +295,7 @@ fviz_dend(clusters, k = 6, k_colors = viridis::viridis(16),
           horiz = TRUE, rect = TRUE, labels_track_height = 10) 
 ```
 
-These correlations vary across time and space, however. In @fig-correlations-year-openai and @fig-correlations-year-claude, we see that these tend to be higher in more recent years and lower in the 1970s (though for Claude there's a bit of a U shape).
+These correlations vary across time and space, however. In @fig-correlations-year-openai and @fig-correlations-year-claude, we see that these tend to be higher in more recent years and lower in the 1970s and 1980s (though for Claude there's a bit of a U shape).
 
 ```{r}
 #| echo: false
@@ -350,7 +351,7 @@ correlations |>
 
 ```
 
-We can also see where the AI-generated scores produce idiosyncratic judgments. Below, I calculate which countries have the highest and the lowest Root Mean Squared Errors (RMSE) between the scaled (0-1) AI score and the V-Dem Additive Polyarchy Index (@tbl-worst-cases-for-openai).
+We can also see where the AI-generated scores produce idiosyncratic judgments. Below, I calculate which countries have the highest and the lowest root mean squared errors (RMSE) between their scaled (0-1) AI scores and the V-Dem Additive Polyarchy Index (@tbl-worst-cases-for-openai).
 
 ```{r}
 #| label: tbl-worst-cases-for-openai
@@ -408,7 +409,7 @@ all_dem |>
   
 ```
 
-By contrast, GPT3.5 does especially well with established democracies (@tbl-best-cases-for-openai):
+By contrast, GPT3.5 does especially well with established democracies, even small ones (@tbl-best-cases-for-openai):
 
 ```{r}
 #| label: tbl-best-cases-for-openai
@@ -447,7 +448,7 @@ all_dem |>
   scale_color_viridis_d()
 ```
 
-Indeed, it's clear that both models tend to struggle with countries with "hybrid" institutions (apparently democratic but with significant problems), which tend to be hard for human coders too, as is evident from @fig-vdem-rmse. But GPT3.5 struggles less!
+Indeed, it's clear that both models tend to struggle with countries with "hybrid" institutions (apparently democratic but with significant problems), which tend to be hard for human coders too, as is evident from @fig-vdem-rmse. But GPT 3.5 struggles less!
 
 ```{r}
 #| echo: false
@@ -471,7 +472,7 @@ combined_ai_scores |>
   
 ```
 
-In any case, Claude struggles with an entirely different set of countries than GPT3.5 ( @tbl-worst-cases-for-claude).
+In any case, Claude struggles with an entirely different set of countries than GPT 3.5 ( @tbl-worst-cases-for-claude).
 
 ```{r}
 #| label: tbl-worst-cases-for-claude
@@ -566,7 +567,7 @@ Overall, GPT3.5 has the edge in accuracy over Claude, with an overall RMSE relat
 
 ## How good are AI Justifications?
 
-There is also the question of the justifications they offer. I can't evaluate them all - I don't have appropriate knowledge - but I can spot-check the justifications offered for countries that I know something about, such as Venezuela. @venezuela-justifications-openai shows the Venezuela justifications from GPT3.5, and @venezuela-justifications-claude shows the Venezuela justifications from Claude.
+There is also the question of the justifications they offer. I can't evaluate them all - I don't have appropriate knowledge - but I can spot-check the justifications offered for countries that I know something about, such as Venezuela. @venezuela-justifications-openai shows the Venezuela justifications from GPT 3.5, and @venezuela-justifications-claude shows the Venezuela justifications from Claude.
 
 ```{r}
 #| echo: false
@@ -591,13 +592,13 @@ claude_tibble |>
   kableExtra::kable_classic(lightable_options = "striped")
 ```
 
-There are pros and const to both. GPT3.5 hallucinates Venezuelan election dates; presidential elections happened in [1973](https://en.wikipedia.org/wiki/1973_Venezuelan_general_election "1973 Venezuelan general election"), [1978](https://en.wikipedia.org/wiki/1978_Venezuelan_general_election "1978 Venezuelan general election"), [1983](https://en.wikipedia.org/wiki/1983_Venezuelan_general_election "1983 Venezuelan general election"), [1988](https://en.wikipedia.org/wiki/1988_Venezuelan_general_election "1988 Venezuelan general election"), [1993](https://en.wikipedia.org/wiki/1993_Venezuelan_general_election "1993 Venezuelan general election"), [1998](https://en.wikipedia.org/wiki/1998_Venezuelan_parliamentary_election "1998 Venezuelan parliamentary election"), [2000](https://en.wikipedia.org/wiki/2000_Venezuelan_general_election "2000 Venezuelan general election"), [2005](https://en.wikipedia.org/wiki/2005_Venezuelan_parliamentary_election "2005 Venezuelan parliamentary election"), [2010](https://en.wikipedia.org/wiki/2010_Venezuelan_parliamentary_election "2010 Venezuelan parliamentary election"), [2015](https://en.wikipedia.org/wiki/2015_Venezuelan_parliamentary_election "2015 Venezuelan parliamentary election"), and [2020](https://en.wikipedia.org/wiki/2020_Venezuelan_parliamentary_election "2020 Venezuelan parliamentary election"), but GPT 3.5 asserts they happened in 1975 (no such election), 1980 (again, no such election), 1985 (no election), and 1995 (no election). But the election of 1973 did result in Carlos Andrés Pérez winning the presidency, and though the score is a bit harsh the overall assessment for 1975 does not strike me as altogether implausible. The 1980 justification is bit more vague, but again (aside from the fact that the election was held in 1978, not 1980) not altogether implausible. GPT3.5 also weirdly says that "In 1990, Venezuela held its first democratic presidential election in 16 years", which is silly (the election happened in 1988; there had been lots of elections in the preceding 16 years), though it does get the transfer of power from Lusinchi to Carlos Andrés Pérez correct (for 1988) and the overall assessment seems reasonable. The 1998 election was won by Chávez, who ran as the incumbent in 2000; the assessment seems reasonably accurate (but the score is high relative to earlier years with similar concerns). 2005, 2010, 2015, and 2020 seem reasonably ok justifications, with specific detail that is basically correct.
+There are pros and const to both. GPT3.5 hallucinates Venezuelan election dates; presidential and congressional elections happened in [1973](https://en.wikipedia.org/wiki/1973_Venezuelan_general_election "1973 Venezuelan general election"), [1978](https://en.wikipedia.org/wiki/1978_Venezuelan_general_election "1978 Venezuelan general election"), [1983](https://en.wikipedia.org/wiki/1983_Venezuelan_general_election "1983 Venezuelan general election"), [1988](https://en.wikipedia.org/wiki/1988_Venezuelan_general_election "1988 Venezuelan general election"), [1993](https://en.wikipedia.org/wiki/1993_Venezuelan_general_election "1993 Venezuelan general election"), [1998](https://en.wikipedia.org/wiki/1998_Venezuelan_parliamentary_election "1998 Venezuelan parliamentary election"), [2000](https://en.wikipedia.org/wiki/2000_Venezuelan_general_election "2000 Venezuelan general election"), [2005](https://en.wikipedia.org/wiki/2005_Venezuelan_parliamentary_election "2005 Venezuelan parliamentary election"), [2010](https://en.wikipedia.org/wiki/2010_Venezuelan_parliamentary_election "2010 Venezuelan parliamentary election"), [2015](https://en.wikipedia.org/wiki/2015_Venezuelan_parliamentary_election "2015 Venezuelan parliamentary election"), and [2020](https://en.wikipedia.org/wiki/2020_Venezuelan_parliamentary_election "2020 Venezuelan parliamentary election"), but GPT 3.5 asserts they happened in 1975 (no such election), 1980 (again, no such election), 1985 (no election), and 1995 (no election). But the election of 1973 did result in Carlos Andrés Pérez winning the presidency, and though the score is a bit harsh the overall assessment for 1975 does not strike me as altogether implausible. The 1980 justification is a bit more vague, but again (aside from the fact that the election was held in 1978, not 1980) not altogether implausible. GPT3.5 also weirdly says that "In 1990, Venezuela held its first democratic presidential election in 16 years", which is silly (the election happened in 1988; there had been lots of elections in the preceding 16 years), though it does get the transfer of power from Lusinchi to Carlos Andrés Pérez correct (for 1988) and the overall assessment seems reasonable. The 1998 election was won by Chávez, who ran as the incumbent in 2000; the assessment seems reasonably accurate (but the score is high relative to earlier years with similar concerns). 2005, 2010, 2015, and 2020 seem reasonably ok justifications, with specific detail that is basically correct.
 
-Claude's justifications are briefer less confident. Like GPT3.5, it also hallucinates some election dates (e.g, for 1975, 1985) but gets other dates correct (it knows there were elections in 1978, and uses that information to talk about the situation in Venezuela in 1980). Like GPT3.5, it makes the claim that "Venezuela held its first democratic elections in decades in 1990" -- there must be something in the training data for both models that makes them think that - but worse, it repeats the claim for 1995, embellishing it with a weirder claim about decades of military rule ("Venezuela held its first democratic elections after decades of military rule in 1993 and 1995"). Claude is also significantly (and often without good reason) harsher than GPT 3.5 in its scoring.
+Claude's justifications are briefer and less confident. Like GPT 3.5, it also hallucinates some election dates (e.g, for 1975, 1985) but gets other dates correct (it knows there were elections in 1978, and uses that information to talk about the situation in Venezuela in 1980). Like GPT3.5, it makes the silly claim that "Venezuela held its first democratic elections in decades in 1990" -- there must be something in the training data for both models that makes them think that - but worse, it repeats the claim for 1995, embellishing it with a weirder claim about decades of military rule ("Venezuela held its first democratic elections after decades of military rule in 1993 and 1995"). Claude is also significantly (and often without good reason) harsher than GPT 3.5 in its scoring.
 
 If the Venezuela case is indicative of the quality of the justifications, the models still have a ways to go. (Perhaps GPT4 would do better; I'm itching to test it once I get access). I've spot-checked a few other justifications and they are often very convincing, but I imagine problems like hallucinating the dates of elections may persist for a while.
 
-I asked both models to give estimates of their uncertainty. Claude was more likely to express genuine uncertainty (including very low confidence scores) and to say it didn't know; indeed, for a few country-years (San Marino, for example) it simply refused to answer the prompt, saying it didn't have enough knowledge. By contrast, GPT3.5 never gave a confidence score lower than 0.7. In any case, neither model's confidence was clearly related to their RMSE from the V-Dem Additive Polyarchy Index (@fig-confidence), though GPT3.5 still seems slightly better calibrated (with a declining trend line, with higher confidence for countries with a lower RMSE). Nevertheless, Claude does show an interesting pattern: the range of its RMSE is larger when it expresses lower confidence, which seems right (its judgments being more random).
+I asked both models to give estimates of their uncertainty. Claude was more likely to express genuine uncertainty (including very low confidence scores) and to say it didn't know; indeed, for a few country-years (San Marino, for example) it simply refused to answer the prompt, saying it didn't have enough knowledge. By contrast, GPT3.5 never gave a confidence score lower than 0.6, and it was mostly always at least 0.7 confident. In any case, neither model's confidence was clearly related to their RMSE from the V-Dem Additive Polyarchy Index (@fig-confidence), though GPT3.5 still seems slightly better calibrated (with a declining trend line, with higher confidence for countries with a lower RMSE). Nevertheless, Claude does show an interesting pattern: the range of its RMSE is larger when it expresses lower confidence, which seems right (its judgments being more random).
 
 ```{r}
 #| echo: false
@@ -647,8 +648,8 @@ claude_tibble |>
 
 The V-Dem project already exists and publishes annually updated estimates of democracy scores, complete with component indicators and all index subcomponents. While using ChatGPT to replicate these scores does not add much value right now, it seems clear to me that over time it will become more and more feasible to use these models to generate political science data. Given the pace of change in this field, I wouldn't bet against these models become more and more important to produce at least quick and dirty data, especially in a hybrid model where experts review the AI's judgments. For example, I am currently working on generating data that extends the [Geddes, Wright, and Frantz](https://sites.psu.edu/dictators/) classification of non-democratic regimes; it would be cool if this worked well. And I'm also experimenting with other prompts, including one based on the [DD dataset](https://xmarquez.github.io/democracyData/reference/pacl.html), which seems to work relatively well to produce dichotomous measures of democracy. Indeed, one could imagine coding many of the indicators of the V-Dem project in this way, and then comparing the AI judgments to expert judgments.
 
-Of course, this may all be "test-set leakage". But the work of generating historical data is basically summarization, and this is a task for which very large models trained on ALL OF THE TEXT are likely to be very good at; I *want* them to memorize what scholars say about elections and put it in nice tabular form for me!
+Of course, this may all be "test-set leakage". But the work of generating tabular time-series data from historical sources is basically summarization, and this is a task for which very large models trained on **ALL OF THE TEXT** are likely to be very good at; I *want* them to memorize what scholars say about elections and put it in nice tabular form for me!
 
 ## Data and Code
 
-I've made the final scores and justifications generated by both models (GPT3.5 and Claude) available [here](https://github.com/xmarquez/GPTDemocracyIndex/ai_scores.csv) for people interested in analyzing them further.
+I've made the final scores and justifications generated by both models (GPT3.5 and Claude) available [here](https://github.com/xmarquez/GPTDemocracyIndex/blob/master/ai_scores.csv) for people interested in analyzing them further. The [repo](https://github.com/xmarquez/GPTDemocracyIndex/) is still a bit in flux, but it contains all the code used to generate this post.

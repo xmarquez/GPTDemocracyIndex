@@ -28,6 +28,38 @@ create_prompt <- function(fh_data) {
                          )
 }
 
+create_prompt_pacl <- function(fh_data) {
+  prompts <- purrr::map2(fh_data$fh_country, fh_data$year,
+                         ~list(
+                           list(
+                             "role" = "system",
+                             "content" = stringr::str_c("You are a political scientist with deep area knowledge of ", .x, ". ")
+                           ),
+                           list(
+                             "role" = "user",
+                             "content" = stringr::str_c("A democracy is a system where 1) the top executive is elected (whether directly ",
+                                                        "by popular vote or indirectly by popularly elected legislators); 2) ",
+                                                        " there is a legislature with members directly or indirectly elected; 3) ", 
+                                                        "There are no major restrictions on popular suffrage; 4) Multiple parties are legally ",
+                                                        "allowed and actually compete as independent entities ",
+                                                        "(not just as members of a Popular Front controlled by a single party); ",
+                                                        "5) Multiple parties are actually represented in the legislature; 6) the current ",
+                                                        "incumbent has not unconstitutionally closed the legislature and rewritten the rules ",
+                                                        "in their favor; and 7) there has been or it is obvious that there could be an ",
+                                                        "alternation of power through elections, where the current executive would lose power ",
+                                                        "and an opposition party would take over. \n\nBased on this definition and your knowlege ",
+                                                        "of the politics of ", .x, " in ", .y, ", was ", .x, " a democracy in ", .y, 
+                                                        "?  \n\nUse only knowledge relevant to ", .x, " in ", .y, 
+                                                        " and answer simply yes or no. Add a measure of your ",
+                                                        "confidence from 0 to 1, with 0 representing  \"not confident at all\", and 1 representing \"very confident\". ",
+                                                        "Use this template to answer: \n", .x," in ", .y,
+                                                        ": yes or no, confidence: number from 0-1, justification: brief justification ",
+                                                        "referring back to the 7 conditions above.")
+                           )
+                         )
+  )
+}
+
 submit_openai <- function(prompt, temperature = 0.2, n = 1) {
   res <- openai::create_chat_completion(model = "gpt-3.5-turbo",
                                         messages = prompt,
@@ -57,6 +89,27 @@ format_results <- function(openai_completions) {
   
 }
 
+format_results_pacl <- function(openai_completions_pacl) {
+  completions <- openai_completions_pacl |> unlist() 
+  completions <- completions[which(str_detect(names(completions), "message.content"))]
+  
+  scores <- str_extract(completions, "(?<=: )(Yes|No)") 
+  scores <- ifelse(scores == "No", 0, 1)
+  
+  confidence <- str_extract(completions, "(?<=fidence: )[0-9]+(\\.[0-9])?") |>
+    as.numeric()
+  
+  completions |> 
+    map_dfr(as_tibble_row, .name_repair = ~c("justification")) |>
+    separate(justification, into = c("fh_country", "year", "justification"), 
+             sep = " in |:", extra = "merge") |>
+    mutate(year = str_extract(year, "[0-9]{4}") |> as.numeric()) |>
+    mutate(score = scores, confidence = confidence, 
+           justification = str_trim(justification)) |>
+    relocate(justification, .after = everything())
+  
+}
+
 create_prompt_claude <- function(fh_data) {
   prompts <- purrr::map2(fh_data$fh_country, fh_data$year,
                          ~stringr::str_c("Human: You are a political scientist with deep area knowledge of ", .x, ". ",
@@ -81,6 +134,31 @@ create_prompt_claude <- function(fh_data) {
                          )
 }
 
+create_prompt_claude_pacl <- function(fh_data) {
+  prompts <- purrr::map2(fh_data$fh_country, fh_data$year,
+                         ~stringr::str_c("Human: A democracy is a system where 1) the top executive is elected (whether directly ",
+                                         "by popular vote or indirectly by popularly elected legislators); 2) ",
+                                         " there is a legislature with members directly or indirectly elected; 3) ",
+                                         "There are no major restrictions on popular suffrage; 4) Multiple parties are legally ",
+                                         "allowed and actually compete as independent entities ",
+                                         "(not just as members of a Popular Front controlled by a single party); ",
+                                         "5) Multiple parties are actually represented in the legislature; 6) the current ",
+                                         "incumbent has not unconstitutionally closed the legislature and rewritten the rules ",
+                                         "in their favor; and 7) there has been or it is obvious that there could be an ",
+                                         "alternation of power through elections, where the current executive would lose power ",
+                                         "and an opposition party would take over. \n\nBased on this definition and your knowlege ",
+                                         "of the politics of ", .x, " in ", .y, ", was ", .x, " a democracy in ", .y,
+                                         "?  \n\nUse only knowledge relevant to ", .x, " in ", .y,
+                                         " and answer simply yes or no. Add a measure of your ",
+                                         "confidence from 0 to 1, with 0 representing  \"not confident at all\", and ",
+                                         "1 representing \"very confident\". ",
+                                         "Use this template to answer: \n", .x," in ", .y, ": {yes or no}, confidence: ", 
+                                         "number from {0-1}, justification: {brief justification referring back to the 7 conditions above}.",
+                                         "\n\nAssistant: ")
+                         
+  )
+  prompts
+}
 submit_claude <- function(prompt, temperature = 0.2) {
   body <- jsonlite::toJSON(
     list(
@@ -119,9 +197,10 @@ format_results_claude <- function(claude_completions) {
     str_split(pattern = "\n", n = 2) |> 
     map_dfr(as_tibble_row, .name_repair = ~c("preamble", "justification")) |>
     select(-preamble) |>
-    separate(justification, into = c("country_year", "claude_justification"), sep = ":", extra = "merge") |>
+    separate(justification, into = c("country_year", "justification"), sep = ":", extra = "merge") |>
     separate(country_year, into = c("fh_country", "year"), sep = " in ") |>
-    mutate(claude_score = scores, claude_confidence = confidence, year = as.numeric(year)) |>
-    relocate(claude_justification, .after = everything())
+    mutate(score = scores, confidence = confidence, year = as.numeric(year)) |>
+    relocate(justification, .after = everything())
   
 }
+

@@ -4,19 +4,21 @@ author: "Xavier Marquez"
 format: html
 editor: visual
 toc: true
+message: false
+warning: false
 ---
 
-Like many people, I've been playing recently with ChatGPT and other Large Language Models, and I've found them very useful for many tasks, though with varying results. Inspired in part by a [blog post](https://tedunderwood.com/2023/03/19/using-gpt-4-to-measure-the-passage-of-time-in-fiction/) by Ted Underwood on using GPT4 to measure the passage of time in fiction, I decided to use [OpenAI's ChatGPT](https://chat.openai.com/chat) (version 3.5-turbo) and [Anthropic's Claude](https://www.anthropic.com/index/introducing-claude) (to which I recently got access) to see if I could replicate a democracy index.
+Like many people, I've been playing recently with ChatGPT and other large language models, and I've found them very useful for many tasks. Inspired in part by a [blog post](https://tedunderwood.com/2023/03/19/using-gpt-4-to-measure-the-passage-of-time-in-fiction/) by Ted Underwood on using GPT4 to measure the passage of time in fiction, I decided to use [OpenAI's ChatGPT](https://chat.openai.com/chat) (version 3.5-turbo) and [Anthropic's Claude](https://www.anthropic.com/index/introducing-claude) (to which I recently got access) to see if I could replicate a democracy index.
 
-This turned out to be surprisingly simple and cheap. I was able to produce thousands of country-year observations in a few hours, complete with justifications, at a very low cost (about \$1.59 of usage for the OpenAI API for 1600 country-years; Claude is currently free for research uses). Though not perfect, the index is a plausible measure of democracy, and can be usefully evaluated because the models provide justifications for their judgments. Moreover, the procedure described here can be extended to many other forms of data generation for political science.
+This turned out to be surprisingly simple and cheap. I was able to produce thousands of country-year observations in a few hours, complete with justifications, at a very low cost (about \$1.59 of usage for the OpenAI API for 1600 country-years; Claude is currently free for research uses). Though by no means perfect (and in some cases completely wrong), the index is a plausible measure of democracy, and can be usefully evaluated partly because the models provide justifications for their judgments. Moreover, the procedure described here can be extended to many other forms of data generation for political science.
 
-The two models I used (ChatGPT and Claude) produced different judgments for some cases (as human coders would), and sometimes their justifications weren't accurate, but overall I was impressed with the quality of their work. ChatGPT seemed to produce more accurate judgments (as measured by its correlation with the Varieties of Democracy Index and Freedom House), and the OpenAI API is more feature-rich, but Claude is currenlty free for research purposes, so it was relatively easy to use it to experiment and produce many more country-year observations (about 10,000, though that took about 12 hours given rate limits). I only experimented with GPT4 for a few country-year observations because I'm cheap (and GPT3.5-turbo is good enough here), but even taking into account GPT4's higher cost, it would not be difficult to produce many observations with a very reasonable expense.
+The two models I used (ChatGPT and Claude) produced different judgments for some cases (as human coders would), and sometimes their justifications weren't accurate, but overall I was impressed with the quality of their work. ChatGPT seemed to produce more accurate judgments (as measured by its correlation with the Varieties of Democracy Index and Freedom House data and its lower root mean square error), and the OpenAI API is more feature-rich, but Claude is currently free for research purposes, so it was relatively easy to use it to experiment and produce many more country-year observations (about 10,000, though that took about 12 hours given my current rate limits). I don't have access to GPT4, so I can't tell whether it would be better for this task, but my sense is that even GPT3.5 is very good already for this sort of task.
 
-I provide fully replicable code \[in this repository\]() using the \`[targets](https://books.ropensci.org/targets/)\` package, but follow along for an explanation and an evaluation of the results. If you want to skip the technical details of R code, just scroll down to the section on evaluation.
+I provide replicable code [in this repository](https:/github.com/xmarquez/GPTDemocracyIndex) using the \`[targets](https://books.ropensci.org/targets/)\` package, but follow along for an explanation and an evaluation of the results. If you want to skip the technical details of R code, just scroll down to the section on evaluation.
 
 ## Setup
 
-You will need a few packages.
+You will need a few packages and an API key from OpenAI (and an API key for Claude as well if you wanted to use that model instead).
 
 ```{r setup}
 library(tidyverse)
@@ -24,25 +26,38 @@ library(democracyData) # Use remotes::install_github("xmarquez/democracyData")
 library(openai)
 ```
 
-To use the
-
-## Sample
-
-The first thing to do is to set up the sample of countries that we want to score. Here I use a sample from Freedom House, because it is fairly comprehensive, and Freedom House scores are widely used as proxies for democracy, and I want to check how the generated scores compare to Freedom House. But we could use any country-year panel data.
-
 ```{r}
-library(tidyverse)
-library(democracyData) # Use remotes::install_github("xmarquez/democracyData")
+#| include: false
 
-fh_data <- democracyData::download_fh()
-fh_panel <- fh_data |> 
-  select(fh_country, year) |>
-  filter(year %% 5 == 0)
+library(targets)
+tar_load(fh_data)
+theme_set(theme_bw())
 ```
 
-Note that since ChatGPT has a knowledge cutoff of 2021, it does not make sense to ask it to generate democracy scores for after that date. To keep costs low and be able to do some experimentation, I'm also only calculating the scores for 20% of all country years - here, simply the years that end in 0 and 5. (A full run of all `r nrow(fh_data)` country-years only costs about \$8, but I did some trial-and error testing and some experimentations, and with a single API key coding `r nrow(fh_panel)` country-years will in any case take about 6 hours to complete).
+Follow the instructions in the [openai](https://irudnyts.github.io/openai/) package to save your OpenAI api key in the appropriate environment variable.
 
-We also create a prompt. The [OpenAI API documentation for the Chat GPT models](https://platform.openai.com/docs/guides/chat/introduction) indicates that a prompt should have at leas one "system" message and one "user" message. The system message gives the system an identity to emulate; the user message contains your instructions. (Though OpenAI also notes that GPT3.5 does not always pay particular attention to the system message). For the system message, I want to ChatGPT to emulate a political scientist as much as possible; my system message is:
+## Sample and Methods
+
+The first thing to do is to set up the sample of countries that we want to generate democracy scores for. Here I use a sample from Freedom House, because it is fairly comprehensive for years after 1972, and I wanted to check how the generated scores compare to Freedom House. They are also more likely to contain country-years for which the models have information and which can be more easily checked by me due to their relative recency (doing historical research to establish the level of democracy in the more distant past is not easy!). And the dataset is not so large that it would take a very long time to code (even by ChatGPT, given my rate limitations). But in principle we could use any country-year panel data.
+
+```{r}
+#| eval: false
+fh_data <- democracyData::download_fh(verbose = FALSE) |>
+  filter(year < 2021)
+
+```
+
+```{r}
+fh_panel <- fh_data |> 
+  select(fh_country, year) |>
+  filter(year %% 5 == 0, year < 2021)
+```
+
+Note that since ChatGPT has a knowledge cutoff of 2021, it does not make sense to ask it to generate democracy scores for after that date. To keep costs low and be able to do some experimentation, I'm also only calculating the scores for 20% of all country years - here, simply the years that end in 0 and 5. (A full run of all `r nrow(fh_data)` country-years only costs about \$8, but I did some trial-and error testing and some experimentation, and with a single API key coding `r nrow(fh_panel)` country-years will in any case take about 6 hours to complete for the GPT3.5 API).
+
+We also need to craft a good a prompt. The [OpenAI API documentation for the Chat GPT models](https://platform.openai.com/docs/guides/chat/introduction) indicates that a prompt should have at leas one "system" message and one "user" message. The system message gives the system an identity to emulate (though OpenAI also notes that GPT3.5 does not always pay particular attention to the system message); the user message contains your instructions.
+
+For the system message, I want to ChatGPT to emulate a political scientist as much as possible; my system message is:
 
 > "You are a political scientist with deep area knowledge of \[country X\]"
 
@@ -50,7 +65,7 @@ For the user message, I want to anchor ChatGPT's answer to a particular concepti
 
 > The electoral principle of democracy seeks to embody the core value of making rulers responsive to citizens, achieved through electoral competition for the electorate's approval under circumstances when suffrage is extensive; political and civil society organizations can operate freely; elections are clean and not marred by fraud or systematic irregularities; and elections affect the composition of the chief executive of the country. In between elections, there is freedom of expression and an independent media capable of presenting alternativeviews on matters of political relevance. (V-Dem Codebook v. 13, p. 45)
 
-Note we could use a very different conception of democracy! In any case, the full user message gives ChatGPT instructions for how to use this conception to answer the question of how democractic a country is:
+Note we could use a very different conception of democracy! (In fact, below I show some results using a different prompt based off the PACL dataset, which tends to produce somewhat better results). In any case, the full user message gives ChatGPT instructions for how to use this conception to answer the question of how democractic a country is:
 
 > "You are investigating the extent to which the ideal of electoral democracy in \[country X\] was achieved in \[year Y\]
 >
@@ -64,7 +79,7 @@ Note we could use a very different conception of democracy! In any case, the ful
 
 We can generate all the prompts very quickly in a format appropriate for use with the {openai} package with this function call:
 
-```{r}
+``` r
 create_prompt <- function(fh_data) {
   prompts <- purrr::map2(fh_data$fh_country, fh_data$year,
                          ~list(
@@ -108,15 +123,15 @@ create_prompt <- function(fh_data) {
                              )
                            )
                          )
+  prompts
 }
 
 prompts <- create_prompt(fh_panel)
-head(prompts, 3)
 ```
 
 We then send these prompts to the API and wait for results, using this function:
 
-```{r, eval = FALSE}
+``` r
 submit_openai <- function(prompt, temperature = 0.2, n = 1) {
   res <- openai::create_chat_completion(model = "gpt-3.5-turbo",
                                         messages = prompt,
@@ -126,22 +141,520 @@ submit_openai <- function(prompt, temperature = 0.2, n = 1) {
   res
 }
 
+# This takes a few hours! 
 openai_completions <- prompts |>
-  purrr::map(submit_openai)
+  purrr::map(submit_openai) 
 ```
 
-Note you need an OpenAI key, and to save it in a place where the function can find it, typically in your `.Renviron` file. You can do that as follows:
+Note that there are several parameters you can set when generating chat completions (see [here](https://platform.openai.com/docs/api-reference/chat/create) for a full description), including the number of distinct responses generated per prompt (n), and the temperature parameter. Lower temperatures make the outputs "more deterministic" (though I don't think the outputs are ever fully deterministic), and are recommended for analytical tasks; I set it at 0.2, somewhat arbitrarily.
 
-```         
-Sys.setenv(
-    OPENAI_API_KEY = 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
-)
+I used the same prompt for Claude (the Anthropic model), but ran it twice - once with a smaller sample, and once with the full `r fh_data |> filter(year < 2021) |> nrow()` country-year observations in the Freedom House panel up to 2020.
+
+Finally, I also experimented with a different prompt based on the [Democracy/Dictatorship dataset](https://xmarquez.github.io/democracyData/reference/pacl.html), running `r nrow(fh_panel)` country-years through OpenAI:
+
+> A democracy is a system where 1) the top executive is elected (whether directly by popular vote or indirectly by popularly elected legislators); 2) there is a legislature with members directly or indirectly elected; 3) There are no major restrictions on popular suffrage; 4) Multiple parties are legally allowed and actually compete as independent entities (not just as members of a Popular Front controlled by a single party); 5) Multiple parties are actually represented in the legislature; 6) the current incumbent has not unconstitutionally closed the legislature and rewritten the rules in their favor; and 7) there has been or it is obvious that there could be an alternation of power through elections, where the current executive would lose power and an opposition party would take over.
+>
+> Based on this definition and your knowlege of the politics of \[country X\] in \[year Y\], was \[country X\] a democracy in \[year Y\]?
+>
+> Use only knowledge relevant to \[country X\] in \[year Y\] and answer simply yes or no. Add a measure of your confidence from 0 to 1, with 0 representing "not confident at all", and 1 representing "very confident". Use this template to answer: \[country X\] in \[year Y\]: yes or no, confidence: number from 0-1, justification: brief justification referring back to the 7 conditions above.
+
+My actual code wraps all of this in a \`[targets](https://books.ropensci.org/targets/)\` pipeline (see [here](https://github.com/xmarquez/GPTDemocracyIndex) for details) so that if I got disconnected or whatever I would not have to pay again to get already-submitted prompts recalculated. After OpenAI and Claude are done, I did some data wrangling to get their responses in the right tabular form (not shown here; check out the [repo](https://github.com/xmarquez/GPTDemocracyIndex) for all the gory details), and voilá! Your democracy index is ready.
+
+Here's a random sample of the generated OpenAI scores:
+
+```{r}
+#| echo: false
+#| tbl-label: tbl-openai-random-sample
+#| tbl-caption: "Random sample of GPT3.5's generated democracy data"
+
+tar_load(completions_tibble)
+
+set.seed(14)
+completions_tibble |>
+  slice_sample(n = 3) |>
+  kableExtra::kbl(col.names = c("Country", "Year", "OpenAI's GPT3.5 score",
+                                "Confidence", "Justification")) |>
+  kableExtra::kable_classic(lightable_options = "striped")
 ```
 
-My actual code wraps all of this in a {targets} pipeline (see \[here\]() for details) so that if I got disconnected or whatever I would not have to pay again to get already-submitted prompts recalculated. Note also that there are several parameters you can set when generating chat completions (see [here](https://platform.openai.com/docs/api-reference/chat/create) for a full description), including the number of distinct responses generated per prompt (n), and the temperature parameter. Lower temperatures make the outputs "more deterministic" (though I don't think the outputs are ever fully deterministic)
+And here's a random sample from Claude:
 
-## Why generate more democracy scores?
+```{r}
+#| echo: false
+#| tbl-label: tbl-claude-random-sample
+#| tbl-caption: "Random sample of Claude's generated democracy data"
 
-## More interesting uses
+tar_load(claude_tibble2)
 
-The V-Dem project already exists and publishes annually updated estimates of democracy scores, complete with component indicators and all index subcomponents. While using ChatGPT to replicate these does not
+claude_tibble2 |>
+  slice_sample(n = 3) |>
+  kableExtra::kbl(col.names = c("Country", "Year", "Anthropic's Claude score",
+                                "Confidence", "Justification")) |>
+  kableExtra::kable_classic(lightable_options = "striped")
+```
+
+## Are these democracy scores any good?
+
+The short answer is that it depends on what you mean by "good", and what you are looking for in democracy scores. I wouldn't (yet) use them in research.
+
+But they are about as highly correlated to major democracy scores as other scores are among themselves (if on the lower side). For example, in figure @fig-correlations, we see that all the AI generated democracy scores are correlated at an above-median level with the V-Dem polyarchy index, suggesting that the actual prompt (which uses the definition of electoral democracy used for the polyarchy index) mattered. They are also well correlated with the Economist Intelligence Unit's Index, but somewhat less well correlated with Freedom House (though still better than the median correlation).
+
+```{r}
+#| echo: false
+#| fig-cap: "Correlations between the scores generated by ChatGPT and Claude with major democracy measures"
+#| label: fig-correlations
+#| fig-width: 12
+#| fig-height: 12
+
+library(targets)
+library(corrr)
+tar_load(all_dem)
+
+measures <- sort(c("v2x_polyarchy", "v2x_api", "vanhanen_democratization",
+                   "polity2", "fh_total_reversed", "eiu", "bti_democracy",
+                   "openai_score", "claude_score", "claude_score_2",
+                   "wgi",
+                   "uds_2014_mean", "pacl_update", "lexical_index"))
+
+reduced_data <- all_dem |>
+  filter(measure %in% measures) |>
+  mutate(measure = case_when(measure == "v2x_polyarchy" ~ 
+                               "V-Dem Polyarchy Index",
+                             measure == "v2x_api" ~
+                               "V-Dem Additive Polyarchy Index",
+                             measure == "vanhanen_democratization" ~
+                               "Vanhanen",
+                             measure == "polity2" ~ 
+                               "Polity2 from Polity 5",
+                             measure == "fh_total_reversed" ~ 
+                               "Freedom House PR + CL, reversed",
+                             measure == "eiu" ~ 
+                               "Economist Intelligence Index",
+                             measure == "bti_democracy" ~ 
+                               "Bertelsmann Transformation Index",
+                             measure == "openai_score" ~ 
+                               "OpenAI GPT3.5 Turbo scores",
+                             measure == "claude_score" ~
+                               "Anthropic Claude small sample",
+                             measure == "claude_score_2" ~
+                               "Anthropic Claude large sample",
+                             measure == "wgi" ~ 
+                               "WGI Voice and Accountability Index",
+                             measure == "uds_2014_mean" ~
+                               "UDS scores, 2014 edition",
+                             measure == "pacl_update" ~
+                               "Updated DD measure",
+                             measure == "lexical_index" ~
+                               "Lexical Index of Democracy, v. 6.4",
+                             TRUE ~ measure))
+correlations <- reduced_data |>
+  pivot_wider(id_cols = extended_country_name:year, 
+              names_from = measure, 
+              values_from = value_rescaled) |>
+  select(-extended_country_name:-year) |>
+  corrr::correlate()
+
+median_corr <- median(
+    correlations |> 
+      select(-term) |> 
+      as.matrix(), na.rm = TRUE) |>
+  round(2)
+  
+correlations |> 
+  rearrange(method = "HC") |>
+  shave() %>%
+  rplot(print_cor = TRUE) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  coord_fixed() +
+  scale_color_gradient2(midpoint = median_corr) +
+  labs(title = "Pairwise correlations among selected measures of democracy",
+       subtitle = str_glue("Median r is {median_corr}.",
+                           " Higher than median correlations in blue."))
+```
+
+A simple hierarchical cluster analysis (@fig-cluster) confirms that the AI-generated scores (especially GPT3.5's scores) are closest in their judgments to the Varieties of Democracy "additive polyarchy index" (a variant of the Polyarchy index).
+
+```{r}
+#| label: fig-cluster
+#| fig-cap: "Hierarchical cluster analysis"
+#| echo: false
+library(factoextra)
+
+dist_matrix <- reduced_data |>
+  pivot_wider(id_cols = extended_country_name:year, 
+              names_from = measure, 
+              values_from = value_rescaled) |>
+  select(-extended_country_name:-year) |>
+  as.matrix() |>
+  t() |>
+  dist()
+
+clusters <- hclust(dist_matrix)
+
+h <- clusters$height
+
+clusters <- dendextend::ladderize(as.dendrogram(clusters))
+
+fviz_dend(clusters, k = 6, k_colors = viridis::viridis(16), 
+          horiz = TRUE, rect = TRUE, labels_track_height = 10) 
+```
+
+These correlations vary across time and space, however. In @fig-correlations-year-openai and @fig-correlations-year-claude, we see that these tend to be higher in more recent years and lower in the 1970s (though for Claude there's a bit of a U shape).
+
+```{r}
+#| echo: false
+#| fig-cap: "Average correlation between GPT3.5's scores and the V-Dem additive Polyarchy index, per year"
+#| label: fig-correlations-year-openai
+
+wide_data <- all_dem |>
+  filter(measure %in% c("openai_score",
+                        "v2x_api")) |>
+  pivot_wider(id_cols = extended_country_name:year, 
+              names_from = measure, 
+              values_from = value_rescaled) 
+  
+correlations <- wide_data |>
+  select(-extended_country_name:-year) |>
+  split(wide_data$year) |>
+  map_df(~correlate(.) |> 
+           stretch(na.rm = TRUE, remove.dups = TRUE), 
+         .id = "year")
+
+correlations |>
+  mutate(year = as.numeric(year)) |>
+  ggplot(aes(x = year, y = r)) +
+  stat_summary(fun.data = mean_cl_normal)  +
+  geom_smooth()
+
+```
+
+```{r}
+#| echo: false
+#| fig-cap: "Average correlation between Claude's scores and the V-Dem additive Polyarchy index, per year"
+#| label: fig-correlations-year-claude
+
+wide_data <- all_dem |>
+  filter(measure %in% c("claude_score_2",
+                        "v2x_api")) |>
+  pivot_wider(id_cols = extended_country_name:year, 
+              names_from = measure, 
+              values_from = value_rescaled) 
+  
+correlations <- wide_data |>
+  select(-extended_country_name:-year) |>
+  split(wide_data$year) |>
+  map_df(~correlate(.) |> 
+           stretch(na.rm = TRUE, remove.dups = TRUE), 
+         .id = "year")
+
+correlations |>
+  mutate(year = as.numeric(year)) |>
+  ggplot(aes(x = year, y = r)) +
+  stat_summary(fun.data = mean_cl_normal) +
+  geom_smooth()
+
+```
+
+We can also see where the AI-generated scores produce idiosyncratic judgments. Below, I calculate which countries have the highest and the lowest Root Mean Squared Errors (RMSE) between the scaled (0-1) AI score and the V-Dem Additive Polyarchy Index (@tbl-worst-cases-for-openai).
+
+```{r}
+#| label: tbl-worst-cases-for-openai
+#| tbl-cap: "Most difficult cases for OpenAI's GPT3.5 (largest RMSE from V-Dem's Additive Polyarchy Index)"
+#| echo: false
+
+tar_load(combined_ai_scores)
+rmse <- combined_ai_scores |>
+  filter(measure %in% c("openai_score", "claude_score_2")) |>
+  left_join(vdem_simple) |>
+  mutate(scaled_value = scales::rescale(value, to = c(0,1))) |>
+  group_by(extended_country_name, measure) |>
+  summarise(rmse = sqrt(mean((v2x_api - scaled_value)^2)))
+
+worst_openai <- rmse |>
+  filter(measure == "openai_score") |>
+  arrange(desc(rmse)) |>
+  head(10) 
+
+best_openai <- rmse |>
+  filter(measure == "openai_score") |>
+  arrange(rmse) |>
+  head(10) 
+
+worst_openai |>
+  kableExtra::kbl(col.names = c("Country", "Measure", "RMSE")) |>
+  kableExtra::kable_classic(lightable_options = "striped")
+```
+
+The countries that GPT3.5 struggles with are also countries that other measures struggle with (@fig-hardest-openai):
+
+```{r}
+#| echo: false
+#| fig-cap: "Most difficult cases for OpenAI's GPT 3.5"
+#| fig-height: 10
+#| label: fig-hardest-openai
+all_dem |>
+  filter(extended_country_name %in% worst_openai$extended_country_name,
+         measure %in% measures,
+         !str_detect(measure, "claude_score")) |>
+  mutate(openai_score = fct_collapse(measure,
+                                     `OpenAI GPT 3.5` = "openai_score",
+                                     `VDem Additive Polyarchy Index` = 
+                                       c("v2x_api"),
+                                     other_level = "Other measures")) |>
+  ggplot(aes(x = year, y = value_rescaled,
+             color = fct_rev(openai_score),
+             group = measure,
+             alpha = fct_rev(openai_score))) +
+  geom_point() +
+  geom_path() +
+  facet_wrap(~extended_country_name, ncol = 2) +
+  labs(alpha = "", color = "", y = "Scaled value (0-1)") +
+  scale_color_viridis_d()
+  
+```
+
+By contrast, GPT3.5 does especially well with established democracies (@tbl-best-cases-for-openai):
+
+```{r}
+#| label: tbl-best-cases-for-openai
+#| tbl-cap: "Best cases for OpenAI's GPT3.5"
+#| echo: false
+
+best_openai |>
+  kableExtra::kbl(col.names = c("Country", "Measure", "RMSE")) |>
+  kableExtra::kable_classic(lightable_options = "striped")
+```
+
+```{r}
+#| echo: false
+#| fig-cap: "Easiest cases for OpenAI's GPT 3.5"
+#| fig-height: 10
+#| label: fig-easiest-openai
+
+
+all_dem |>
+  filter(extended_country_name %in% best_openai$extended_country_name,
+         measure %in% measures,
+         !str_detect(measure, "claude_score")) |>
+  mutate(openai_score = fct_collapse(measure,
+                                     `OpenAI GPT 3.5` = "openai_score",
+                                     `VDem Additive Polyarchy Index` = 
+                                       c("v2x_api"),
+                                     other_level = "Other measures")) |>
+  ggplot(aes(x = year, y = value_rescaled,
+             color = fct_rev(openai_score),
+             group = measure,
+             alpha = fct_rev(openai_score))) +
+  geom_point() +
+  geom_path() +
+  facet_wrap(~extended_country_name, ncol = 2) +
+  labs(alpha = "", color = "", y = "Scaled value (0-1)") +
+  scale_color_viridis_d()
+```
+
+Indeed, it's clear that both models tend to struggle with countries with "hybrid" institutions (apparently democratic but with significant problems), which tend to be hard for human coders too, as is evident from @fig-vdem-rmse. But GPT3.5 struggles less!
+
+```{r}
+#| echo: false
+#| fig-cap: "Relationship between avg. V-Dem Additive Polity Index and RMSE for OpenAI's GPT3.5 and Anthropic's Claude"
+#| label: fig-vdem-rmse
+
+combined_ai_scores |>
+  filter(measure %in% c("openai_score", "claude_score_2")) |>
+  mutate(measure = case_when(measure == "openai_score" ~ "GPT 3.5",
+                             TRUE ~ "Claude (large sample)")) |>
+  left_join(vdem_simple) |>
+  mutate(scaled_value = scales::rescale(value, to = c(0,1))) |>
+  group_by(extended_country_name, measure) |>
+  summarise(rmse = sqrt(mean((v2x_api - scaled_value)^2)),
+            avg_vdem = mean(v2x_api)) |>
+  ggplot(aes(x = avg_vdem, y = rmse, color = measure)) +
+  geom_point() +
+  geom_smooth() +
+  labs(x = "Average V-Dem Additive Polyarchy Index Score",
+       y = "Average RMSE of AI score for country")
+  
+```
+
+In any case, Claude struggles with an entirely different set of countries than GPT3.5 ( @tbl-worst-cases-for-claude).
+
+```{r}
+#| label: tbl-worst-cases-for-claude
+#| tbl-cap: "Most difficult cases for Anthropic's Claude (largest RMSE from V-Dem's Additive Polyarchy Index)"
+#| echo: false
+
+worst_claude <- rmse |>
+  filter(measure == "claude_score_2") |>
+  arrange(desc(rmse)) |>
+  head(10) 
+
+best_claude <- rmse |>
+  filter(measure == "claude_score_2") |>
+  arrange(rmse) |>
+  head(10) 
+
+worst_claude |>
+  kableExtra::kbl(col.names = c("Country", "Measure", "RMSE")) |>
+  kableExtra::kable_classic(lightable_options = "striped")
+```
+
+These are not quite as difficult for human coders to classify as the countries GPT3.5 struggles with (except perhaps for Bosnia-Herzegovina); it seems that Claude sometimes has a tendency to output a middle score when it encounters some evidence that not all is perfect with democracy (@fig-most-difficult-claude). Moreover, it seems Claude still has difficulty detecting transitions (perhaps another reason it struggled with the 1990s, @fig-correlations-year-claude).
+
+```{r}
+#| echo: false
+#| fig-cap: "Most difficult cases for Anthropic's Claude"
+#| fig-height: 10
+#| label: fig-most-difficult-claude
+
+all_dem |>
+  filter(extended_country_name %in% worst_claude$extended_country_name,
+         measure %in% measures,
+         !str_detect(measure, "openai_score")) |>
+  mutate(openai_score = fct_collapse(measure,
+                                     `Anthropic's Claude` = "claude_score_2",
+                                     `VDem Additive Polyarchy Index` = 
+                                       c("v2x_api"),
+                                     other_level = "Other measures")) |>
+  ggplot(aes(x = year, y = value_rescaled,
+             color = fct_rev(openai_score),
+             group = measure,
+             alpha = fct_rev(openai_score))) +
+  geom_point() +
+  geom_path() +
+  facet_wrap(~extended_country_name, ncol = 2) +
+  labs(alpha = "", color = "", y = "Scaled value (0-1)") +
+  scale_color_viridis_d()
+```
+
+By contrast, here are Claude's best cases - most of them highly undemocratic and showing few changes, except for Somalia (@fig-easiest-claude).
+
+```{r}
+#| echo: false
+#| fig-cap: "Easiest cases for Anthropic's Claude"
+#| fig-height: 10
+#| label: fig-easiest-claude
+
+all_dem |>
+  filter(extended_country_name %in% best_claude$extended_country_name,
+         measure %in% measures,
+         !str_detect(measure, "openai_score")) |>
+  mutate(openai_score = fct_collapse(measure,
+                                     `Anthropic's Claude` = "claude_score_2",
+                                     `VDem Additive Polyarchy Index` = 
+                                       c("v2x_api"),
+                                     other_level = "Other measures")) |>
+  ggplot(aes(x = year, y = value_rescaled,
+             color = fct_rev(openai_score),
+             group = measure,
+             alpha = fct_rev(openai_score))) +
+  geom_point() +
+  geom_path() +
+  facet_wrap(~extended_country_name, ncol = 2) +
+  labs(alpha = "", color = "", y = "Scaled value (0-1)") +
+  scale_color_viridis_d()
+```
+
+```{r}
+#| echo: false
+
+rmse_summary <-  combined_ai_scores |>
+  filter(measure %in% c("openai_score", "claude_score_2")) |>
+  left_join(vdem_simple) |>
+  mutate(scaled_value = scales::rescale(value, to = c(0,1))) |>
+  group_by(measure) |>
+  summarise(rmse = round(sqrt(mean((v2x_api - scaled_value)^2, na.rm = TRUE)), 2))
+
+
+```
+
+Overall, GPT3.5 has the edge in accuracy over Claude, with an overall RMSE relative to the V-Dem Additive Polity Index of `r rmse_summary$rmse[rmse_summary$measure == "openai_score"]` vs. `r rmse_summary$rmse[rmse_summary$measure == "claude_score_2"]` .
+
+## How good are their justifications?
+
+There is also the question of the justifications they offer. I can't evaluate them all - I don't have appropriate knowledge - but I can spot-check the justifications offered for countries that I know something about, such as Venezuela. @venezuela-justifications-openai shows the Venezuela justifications from GPT3.5, and @venezuela-justifications-claude shows the Venezuela justifications from Claude.
+
+```{r}
+#| echo: false
+#| tbl-label: venezuela-justifications-openai
+#| tbl-cap: "Justifications for Venezuela by GPT3.5"
+completions_tibble |>
+  filter(fh_country == "Venezuela") |>
+  kableExtra::kbl(col.names = c("Country", "Year", "OpenAI's GPT3.5 score",
+                                "Confidence", "Justification")) |>
+  kableExtra::kable_classic(lightable_options = "striped")
+```
+
+```{r}
+#| echo: false
+#| tbl-label: venezuela-justifications-claude
+#| tbl-cap: "Justifications for Venezuela by Claude"
+tar_load(claude_tibble)
+claude_tibble |>
+  filter(fh_country == "Venezuela") |>
+  kableExtra::kbl(col.names = c("Country", "Year", "OpenAI's GPT3.5 score",
+                                "Confidence", "Justification")) |>
+  kableExtra::kable_classic(lightable_options = "striped")
+```
+
+There are pros and const to both. GPT3.5 hallucinates Venezuelan election dates; presidential elections happened in [1973](https://en.wikipedia.org/wiki/1973_Venezuelan_general_election "1973 Venezuelan general election"), [1978](https://en.wikipedia.org/wiki/1978_Venezuelan_general_election "1978 Venezuelan general election"), [1983](https://en.wikipedia.org/wiki/1983_Venezuelan_general_election "1983 Venezuelan general election"), [1988](https://en.wikipedia.org/wiki/1988_Venezuelan_general_election "1988 Venezuelan general election"), [1993](https://en.wikipedia.org/wiki/1993_Venezuelan_general_election "1993 Venezuelan general election"), [1998](https://en.wikipedia.org/wiki/1998_Venezuelan_parliamentary_election "1998 Venezuelan parliamentary election"), [2000](https://en.wikipedia.org/wiki/2000_Venezuelan_general_election "2000 Venezuelan general election"){style="font-size: 11pt;"}, [2005](https://en.wikipedia.org/wiki/2005_Venezuelan_parliamentary_election "2005 Venezuelan parliamentary election"), [2010](https://en.wikipedia.org/wiki/2010_Venezuelan_parliamentary_election "2010 Venezuelan parliamentary election"), [2015](https://en.wikipedia.org/wiki/2015_Venezuelan_parliamentary_election "2015 Venezuelan parliamentary election"), and [2020](https://en.wikipedia.org/wiki/2020_Venezuelan_parliamentary_election "2020 Venezuelan parliamentary election"), but GPT 3.5 asserts they happened in 1975 (no such election), 1980 (again, no such election), 1985 (no election), and 1995 (no election). But the election of 1973 did result in Carlos Andrés Pérez winning the presidency, and though the score is a bit harsh the overall assessment for 1975 does not strike me as altogether implausible. The 1980 justification is bit more vague, but again (aside from the fact that the election was held in 1978, not 1980) not altogether implausible. GPT3.5 also weirdly says that "In 1990, Venezuela held its first democratic presidential election in 16 years", which is silly (the election happened in 1988; there had been lots of elections in the preceding 16 years), though it does get the transfer of power from Lusinchi to Carlos Andrés Pérez correct (for 1988) and the overall assessment seems reasonable. The 1998 election was won by Chávez, who ran as the incumbent in 2000; the assessment seems reasonably accurate (but the score is high relative to earlier years with similar concerns). 2005, 2010, 2015, and 2020 seem reasonably ok justifications, with specific detail that is basically correct.
+
+Claude's justifications are briefer less confident. Like GPT3.5, it also hallucinates some election dates (e.g, for 1975, 1985) but gets other dates correct (it knows there were elections in 1978, and uses that information to talk about the situation in Venezuela in 1980). Like GPT3.5, it makes the claim that "Venezuela held its first democratic elections in decades in 1990" -- there must be something in the training data for both models that makes them think that - but worse, it repeats the claim for 1995, embellishing it with a weirder claim about decades of military rule ("Venezuela held its first democratic elections after decades of military rule in 1993 and 1995"). Claude is also significantly (and often without good reason) harsher than GPT 3.5 in its scoring.
+
+If the Venezuela case is indicative of the quality of the justifications, the models still have a bit to go. (Perhaps GPT4 would do better; I'm itching to test it once I get access). I've spot-checked a few other justifications and they are often very convincing, but I imagine problems like hallucinating the dates of elections may persist for a while.
+
+I asked both models to give estimates of their uncertainty. Claude was more likely to express genuine uncertainty (including very low confidence scores) and to say it didn't know; indeed, for a few country-years (San Marino, for example) it simply refused to answer the prompt, saying it didn't have enough knowledge. By contrast, GPT3.5 never gave a confidence score lower than 0.7. In any case, neither model's confidence was clearly related to their RMSE from the V-Dem Additive Polyarchy Index (@fig-confidence), though GPT3.5 still seems slightly better calibrated (with a declining trend line, with higher confidence for countries with a lower RMSE). Nevertheless, Claude does show an interesting pattern: the range of its RMSE is larger when it expresses lower confidence, which seems right.
+
+```{r}
+#| echo: false
+#| label: fig-confidence
+#| fig-cap: "Average confidence expressed by the model for the scores of a country vs. RMSE for each country"
+
+
+
+combined_ai_scores |>
+  filter(measure %in% c("openai_score", "claude_score_2")) |>
+  mutate(measure = case_when(measure == "openai_score" ~ "GPT 3.5",
+                             TRUE ~ "Claude (large sample)")) |>
+  left_join(vdem_simple) |>
+  mutate(scaled_value = scales::rescale(value, to = c(0,1))) |>
+  group_by(extended_country_name, measure) |>
+  summarise(rmse = sqrt(mean((v2x_api - scaled_value)^2)),
+            avg_confidence = mean(confidence)) |>
+  ggplot(aes(x = avg_confidence, y = rmse, color = measure)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  labs(x = "Average confidence expressed by the model",
+       y = "Average RMSE of AI score for country")
+```
+
+I also used Claude to code countries twice (once for a smaller sample, once for a larger sample). While it mostly coded countries similarly, in a few cases (136 country-years out of 1800 common country-years) it came up with new scores. The scores never changed much (almost always just 1 point out of 10); the largest change was 2 points, for 3 country years. (Perhaps a higher temperature setting would lead to more such changes). In this sense Claude is an unusually consistent coder; even the three country-years below are ambiguous, and I could have gone either way, though Claude does seem rather harsh in its judgments.
+
+```{r}
+#| echo: false
+#| tbl-label: claude-max-changes
+#| tbl-cap: "Most change between the small and large run of Claude"
+
+claude_tibble |> 
+  mutate(sample = "small") |>
+  bind_rows(claude_tibble2 |>
+              mutate(sample = "large")) |>
+  pivot_wider(id_cols = c("fh_country", "year"), 
+              names_from = sample, values_from = c(score, justification)) |>
+  filter(!is.na(score_small), score_small != score_large) |>
+  filter(abs(score_small - score_large) == max(abs(score_small - score_large)))  |>
+  kableExtra::kbl(col.names = c("Country", "Year", "Claude score (small sample)",
+                                "Claude score (large sample)", 
+                                "Justification (small sample)", 
+                                "Justification (large sample)")) |>
+  kableExtra::kable_classic(lightable_options = "striped")
+  
+```
+
+## Other uses
+
+The V-Dem project already exists and publishes annually updated estimates of democracy scores, complete with component indicators and all index subcomponents. While using ChatGPT to replicate these does not add much value right now, it seems clear to me that over time it will become more and more feasible to use these models to generate political science data. Given the pace of change in this field, I wouldn't bet against these models become more and more important for the data-generating process, especially in a hybrid model where experts review their judgments. For example, I am currently working on generating data that extends the [Geddes, Wright, and Frantz](https://sites.psu.edu/dictators/ ) classification of non-democratic regimes; it would be cool if this worked well.
+
+## Final Data
+
+I've made the final scores generated by both models (GPT3.5 and Claude) available here for people interested in analyzing it further.

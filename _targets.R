@@ -148,6 +148,6 @@ list(
                            ),
                          verbose = FALSE) |>
       select(extended_country_name, GWn, cown, in_GW_system, 
-             year, measure, value, confidence, index_type, dataset)
+             year, measure, value, confidence, index_type, dataset, justification)
   )
 )

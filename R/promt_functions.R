@@ -93,8 +93,8 @@ format_results_pacl <- function(openai_completions_pacl) {
   completions <- openai_completions_pacl |> unlist() 
   completions <- completions[which(str_detect(names(completions), "message.content"))]
   
-  scores <- str_extract(completions, "(?<=: )(Yes|No)") 
-  scores <- ifelse(scores == "No", 0, 1)
+  scores <- str_extract(completions, regex("(?<=: )(Yes|No)", ignore_case = TRUE)) 
+  scores <- ifelse(scores %in% c("No", "no"), 0, 1)
   
   confidence <- str_extract(completions, "(?<=fidence: )[0-9]+(\\.[0-9])?") |>
     as.numeric()

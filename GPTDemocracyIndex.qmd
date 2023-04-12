@@ -15,13 +15,13 @@ Like many people, I've been playing recently with ChatGPT and other large langua
 
 This turned out to be surprisingly simple and cheap. I was able to produce thousands of country-year observations in a few hours, complete with justifications, at a very low cost (about \$1.59 of usage for the OpenAI API for 1600 country-years; Claude is currently free for research uses). Though by no means perfect (and in some cases completely wrong), the scores they produce are a plausible measure of democracy, and can be usefully evaluated partly because the models provide justifications for their judgments. Moreover, the procedure described here can be extended to many other forms of data generation for political science.
 
-The two models I used (ChatGPT aka GPT3.5 Turbo and Claude) produced different judgments for some cases (as human coders would), and sometimes their justifications weren't accurate, but overall I was impressed with the quality of their work. ChatGPT seemed to produce more accurate judgments (as measured by its correlation with the Varieties of Democracy Index and Freedom House data and its lower root mean square error), and the OpenAI API is more feature-rich, but Claude is currently free for research purposes, so it was relatively easy to use it to experiment and produce many more country-year observations (about 10,000, though that took about 12 hours given my current rate limits). I don't have access to GPT4, so I can't tell whether it would be better for this task, but my sense is that even GPT3.5 is very good already.
+The two models I used (ChatGPT aka GPT3.5 Turbo and Claude) produced different judgments for some cases (as human coders would), and sometimes their justifications weren't accurate, but overall I was impressed with the quality of their work. ChatGPT seemed to produce more accurate judgments (as measured by its correlation with the Varieties of Democracy Index and Freedom House data and its lower root mean square error), and the OpenAI API is more feature-rich, but given that Claude is free for research purposes, it was relatively easy to use it to experiment and produce many more country-year observations (about 10,000, though that took about 12 hours given my current rate limits). I don't have access to GPT4, so I can't tell whether it would be better for this task, but my sense is that even GPT3.5 is very good already.
 
-I provide replicable code [in this repository](https:/github.com/xmarquez/GPTDemocracyIndex) using the [`targets`](https://books.ropensci.org/targets/) package (though the repo is not stable - I'm still experimenting with it, and things are liable to change!), but follow along for an explanation and an evaluation of the results. If you want to skip the technical details of R code, just scroll down to the section on evaluation.
+I provide replicable code in [this repository](https://github.com/xmarquez/GPTDemocracyIndex) using the [`targets`](https://books.ropensci.org/targets/) package (though the repo is not stable - I'm still experimenting with this, and things are liable to change!), but follow along for an explanation and an evaluation of the results. If you want to skip the technical details of R code, just scroll down to the section on evaluation.
 
 ## Setup
 
-You will need a few packages and an API key from OpenAI (and an API key for Claude as well if you wanted to use that model, but I don't provide instructions here - check [the repo](https:/github.com/xmarquez/GPTDemocracyIndex) for details).
+You will need a few packages and an API key from OpenAI (and an API key for Claude as well if you wanted to use that model, but I don't provide instructions here - check [the repo](https://github.com/xmarquez/GPTDemocracyIndex) for details).
 
 ```{r setup}
 library(tidyverse)
@@ -58,7 +58,7 @@ fh_panel <- fh_data |>
 
 Note that since ChatGPT has a knowledge cutoff of 2021, it does not make sense to ask it to generate democracy scores for after that date. To keep costs low and be able to do some experimentation, I'm also only calculating the scores for about 20% of all country years - here, simply the years that end in 0 and 5. (A full run of all `r nrow(fh_data)` country-years only costs about \$8, but I did some trial-and error testing and some experimentation, and with a single API key coding `r nrow(fh_panel)` country-years in any case takes about 6 hours to complete for the GPT 3.5 API, and I'm impatient).
 
-We also need to craft a good a prompt. The [OpenAI API documentation for the Chat GPT models](https://platform.openai.com/docs/guides/chat/introduction) indicates that a prompt should have at leas one "system" message and one "user" message. The system message gives the system an identity to emulate (though OpenAI also notes that GPT3.5 does not always pay particular attention to the system message); the user message contains your instructions.
+We also need to craft a good a prompt. The [OpenAI API documentation for the Chat GPT models](https://platform.openai.com/docs/guides/chat/introduction) indicates that a prompt should have at least one "system" message and one "user" message. The system message gives the system an identity to emulate (though OpenAI also notes that GPT3.5 does not always pay particular attention to the system message); the user message contains your instructions.
 
 For the system message, I want to ChatGPT to emulate a political scientist as much as possible; my system message is:
 
@@ -448,7 +448,7 @@ all_dem |>
   scale_color_viridis_d()
 ```
 
-Indeed, it's clear that both models tend to struggle with countries with "hybrid" institutions (apparently democratic but with significant problems), which tend to be hard for human coders too, as is evident from @fig-vdem-rmse. But GPT 3.5 struggles less!
+Indeed, it's clear that both models tend to struggle with countries with "hybrid" institutions (apparently democratic but with significant problems), which can be difficult for human coders too, as is evident from @fig-vdem-rmse. But GPT 3.5 struggles less!
 
 ```{r}
 #| echo: false
@@ -567,12 +567,13 @@ Overall, GPT3.5 has the edge in accuracy over Claude, with an overall RMSE relat
 
 ## How good are AI Justifications?
 
-There is also the question of the justifications they offer. I can't evaluate them all - I don't have appropriate knowledge - but I can spot-check the justifications offered for countries that I know something about, such as Venezuela. @venezuela-justifications-openai shows the Venezuela justifications from GPT 3.5, and @venezuela-justifications-claude shows the Venezuela justifications from Claude.
+There is also the question of the justifications they offer. I can't evaluate them all - I don't have appropriate knowledge - but I can spot-check the justifications offered for countries that I know something about, such as Venezuela. @tbl-venezuela-justifications-openai shows the Venezuela justifications from GPT 3.5, and @tbl-venezuela-justifications-claude shows the Venezuela justifications from Claude.
 
 ```{r}
 #| echo: false
-#| tbl-label: venezuela-justifications-openai
+#| label: tbl-venezuela-justifications-openai
 #| tbl-cap: "Justifications for Venezuela by GPT3.5"
+
 completions_tibble |>
   filter(fh_country == "Venezuela") |>
   kableExtra::kbl(col.names = c("Country", "Year", "OpenAI's GPT3.5 score",
@@ -582,7 +583,7 @@ completions_tibble |>
 
 ```{r}
 #| echo: false
-#| tbl-label: venezuela-justifications-claude
+#| label: tbl-venezuela-justifications-claude
 #| tbl-cap: "Justifications for Venezuela by Claude"
 tar_load(claude_tibble)
 claude_tibble |>
@@ -592,7 +593,7 @@ claude_tibble |>
   kableExtra::kable_classic(lightable_options = "striped")
 ```
 
-There are pros and const to both. GPT3.5 hallucinates Venezuelan election dates; presidential and congressional elections happened in [1973](https://en.wikipedia.org/wiki/1973_Venezuelan_general_election "1973 Venezuelan general election"), [1978](https://en.wikipedia.org/wiki/1978_Venezuelan_general_election "1978 Venezuelan general election"), [1983](https://en.wikipedia.org/wiki/1983_Venezuelan_general_election "1983 Venezuelan general election"), [1988](https://en.wikipedia.org/wiki/1988_Venezuelan_general_election "1988 Venezuelan general election"), [1993](https://en.wikipedia.org/wiki/1993_Venezuelan_general_election "1993 Venezuelan general election"), [1998](https://en.wikipedia.org/wiki/1998_Venezuelan_parliamentary_election "1998 Venezuelan parliamentary election"), [2000](https://en.wikipedia.org/wiki/2000_Venezuelan_general_election "2000 Venezuelan general election"), [2005](https://en.wikipedia.org/wiki/2005_Venezuelan_parliamentary_election "2005 Venezuelan parliamentary election"), [2010](https://en.wikipedia.org/wiki/2010_Venezuelan_parliamentary_election "2010 Venezuelan parliamentary election"), [2015](https://en.wikipedia.org/wiki/2015_Venezuelan_parliamentary_election "2015 Venezuelan parliamentary election"), and [2020](https://en.wikipedia.org/wiki/2020_Venezuelan_parliamentary_election "2020 Venezuelan parliamentary election"), but GPT 3.5 asserts they happened in 1975 (no such election), 1980 (again, no such election), 1985 (no election), and 1995 (no election). But the election of 1973 did result in Carlos Andrés Pérez winning the presidency, and though the score is a bit harsh the overall assessment for 1975 does not strike me as altogether implausible. The 1980 justification is a bit more vague, but again (aside from the fact that the election was held in 1978, not 1980) not altogether implausible. GPT3.5 also weirdly says that "In 1990, Venezuela held its first democratic presidential election in 16 years", which is silly (the election happened in 1988; there had been lots of elections in the preceding 16 years), though it does get the transfer of power from Lusinchi to Carlos Andrés Pérez correct (for 1988) and the overall assessment seems reasonable. The 1998 election was won by Chávez, who ran as the incumbent in 2000; the assessment seems reasonably accurate (but the score is high relative to earlier years with similar concerns). 2005, 2010, 2015, and 2020 seem reasonably ok justifications, with specific detail that is basically correct.
+There is a mix of accurate and inaccurate info in these justifications. GPT3.5 hallucinates Venezuelan election dates; presidential and congressional elections happened in [1973](https://en.wikipedia.org/wiki/1973_Venezuelan_general_election "1973 Venezuelan general election"), [1978](https://en.wikipedia.org/wiki/1978_Venezuelan_general_election "1978 Venezuelan general election"), [1983](https://en.wikipedia.org/wiki/1983_Venezuelan_general_election "1983 Venezuelan general election"), [1988](https://en.wikipedia.org/wiki/1988_Venezuelan_general_election "1988 Venezuelan general election"), [1993](https://en.wikipedia.org/wiki/1993_Venezuelan_general_election "1993 Venezuelan general election"), [1998](https://en.wikipedia.org/wiki/1998_Venezuelan_parliamentary_election "1998 Venezuelan parliamentary election"), [2000](https://en.wikipedia.org/wiki/2000_Venezuelan_general_election "2000 Venezuelan general election"), [2005](https://en.wikipedia.org/wiki/2005_Venezuelan_parliamentary_election "2005 Venezuelan parliamentary election"), [2010](https://en.wikipedia.org/wiki/2010_Venezuelan_parliamentary_election "2010 Venezuelan parliamentary election"), [2015](https://en.wikipedia.org/wiki/2015_Venezuelan_parliamentary_election "2015 Venezuelan parliamentary election"), and [2020](https://en.wikipedia.org/wiki/2020_Venezuelan_parliamentary_election "2020 Venezuelan parliamentary election"), but GPT 3.5 asserts they happened in 1975 (no such election), 1980 (again, no such election), 1985 (no election), and 1995 (no election). But the election of 1973 did result in Carlos Andrés Pérez winning the presidency, and though the score is a bit harsh the overall assessment for 1975 does not strike me as altogether implausible. The 1980 justification is a bit more vague, but again (aside from the fact that the election was held in 1978, not 1980) not altogether implausible. GPT3.5 also weirdly says that "In 1990, Venezuela held its first democratic presidential election in 16 years", which is silly (the election happened in 1988; there had been lots of elections in the preceding 16 years), though it does get the transfer of power from Lusinchi to Carlos Andrés Pérez correct (for 1988) and the overall assessment seems reasonable. The 1998 election was won by Chávez, who ran as the incumbent in 2000; the assessment seems reasonably accurate (but the score is high relative to earlier years with similar concerns). 2005, 2010, 2015, and 2020 seem reasonably ok justifications, with specific detail that is basically correct.
 
 Claude's justifications are briefer and less confident. Like GPT 3.5, it also hallucinates some election dates (e.g, for 1975, 1985) but gets other dates correct (it knows there were elections in 1978, and uses that information to talk about the situation in Venezuela in 1980). Like GPT3.5, it makes the silly claim that "Venezuela held its first democratic elections in decades in 1990" -- there must be something in the training data for both models that makes them think that - but worse, it repeats the claim for 1995, embellishing it with a weirder claim about decades of military rule ("Venezuela held its first democratic elections after decades of military rule in 1993 and 1995"). Claude is also significantly (and often without good reason) harsher than GPT 3.5 in its scoring.
 

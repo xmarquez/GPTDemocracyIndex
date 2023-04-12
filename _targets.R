@@ -70,6 +70,16 @@ list(
     iteration = "list"
   ),
   tar_target(
+    name = claude_prompts_pacl,
+    command = create_prompt_claude_pacl(fh_data),
+    iteration = "list"
+  ),
+  tar_target(
+    name = claude_completions_pacl,
+    command = submit_claude(claude_prompts_pacl),
+    pattern = map(claude_prompts_pacl)
+  ),
+  tar_target(
     name = claude_completions,
     command = submit_claude(claude_prompts),
     pattern = map(claude_prompts)

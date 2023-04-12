@@ -224,7 +224,7 @@ reduced_data <- all_dem |>
                              measure == "fh_total_reversed" ~ 
                                "Freedom House PR + CL, reversed",
                              measure == "eiu" ~ 
-                               "Economist Intelligence Index",
+                               "Economist Intelligence Unit Index",
                              measure == "bti_democracy" ~ 
                                "Bertelsmann Transformation Index",
                              measure == "openai_score" ~ 
@@ -563,7 +563,7 @@ rmse_summary <-  combined_ai_scores |>
 
 ```
 
-Overall, GPT3.5 has the edge in accuracy over Claude, with an overall RMSE relative to the V-Dem Additive Polity Index of `r rmse_summary$rmse[rmse_summary$measure == "openai_score"]` vs. `r rmse_summary$rmse[rmse_summary$measure == "claude_score_2"]` .
+Overall, GPT3.5 has the edge in accuracy over Claude, with an overall RMSE relative to the V-Dem Additive Polyarchy Index of `r rmse_summary$rmse[rmse_summary$measure == "openai_score"]` vs. `r rmse_summary$rmse[rmse_summary$measure == "claude_score_2"]` .
 
 ## How good are AI Justifications?
 
